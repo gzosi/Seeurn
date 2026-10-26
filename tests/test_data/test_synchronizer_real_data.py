@@ -58,3 +58,4 @@ class TestRealDataSynchronization:
         # Verifica l'assenza di frame persi a metà sequenza su Cam 3
         missing_cam3 = syncer.find_missing_frames(cam3_files)
         assert len(missing_cam3) == 0, f"Frame persi rilevati su Cam 3: {missing_cam3}"
+

@@ -88,3 +88,4 @@ class TestMissingFramesDetection:
         ]
         missing = syncer.find_missing_frames(files)
         assert missing == [12, 14]
+
