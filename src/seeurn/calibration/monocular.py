@@ -16,32 +16,42 @@ import numpy as np
 @dataclass(frozen=True)
 class DistortionModelFlags:
     """
-    Flag di controllo per i modelli di distorsione di OpenCV.
+    Flag di controllo per i modelli di distorsione e i vincoli fisici ottici in OpenCV.
 
-    Permette di abilitare selettivamente:
-    - Modello Razionale (k4, k5, k6): frazione razionale radiale adatta a distorsioni forti.
-    - Modello Thin-Prism (s1, s2, s3, s4): modella l'effetto cuneo ottico della lastra di vetro.
-    - Modello Tilted Sensor (tau_x, tau_y): modella l'eventuale inclinazione del piano del sensore.
-    - Vincoli addizionali (aspect ratio fisso, distorsione tangenziale nulla).
+    Vincoli fisici fondamentali:
+    - fix_aspect_ratio: True -> impone pixel quadrati del sensore CMOS (fx == fy).
+    - fix_principal_point: True -> blocca il punto principale al centro del sensore (cx = w/2, cy = h/2)
+      eliminando l'ambiguità proiettiva traslazione/rotazione tipica dei tunnel idrodinamici.
+    - fix_k3: True -> azzera k3 per evitare instabilità polinomiali di 6° grado ai bordi del frame.
+    - use_rational_model: False per default (evita divergenze numeriche del denominatore razionale k4..k6).
+    - use_thin_prism: True/False per modellare l'effetto prisma delle lastre piane.
+    - use_tilted: False per default.
+    - zero_tangent_dist: False.
     """
 
-    use_rational_model: bool = True
-    use_thin_prism: bool = True
-    use_tilted: bool = True
-    fix_aspect_ratio: bool = False
+    fix_aspect_ratio: bool = True
+    fix_principal_point: bool = True
+    fix_k3: bool = True
+    use_rational_model: bool = False
+    use_thin_prism: bool = False
+    use_tilted: bool = False
     zero_tangent_dist: bool = False
 
     def to_opencv_flags(self) -> int:
         """Converte i flag booleani nella maschera di bit intera richiesta da OpenCV."""
         flags = 0
+        if self.fix_aspect_ratio:
+            flags |= cv2.CALIB_FIX_ASPECT_RATIO
+        if self.fix_principal_point:
+            flags |= cv2.CALIB_FIX_PRINCIPAL_POINT
+        if self.fix_k3:
+            flags |= cv2.CALIB_FIX_K3
         if self.use_rational_model:
             flags |= cv2.CALIB_RATIONAL_MODEL
         if self.use_thin_prism:
             flags |= cv2.CALIB_THIN_PRISM_MODEL
         if self.use_tilted:
             flags |= cv2.CALIB_TILTED_MODEL
-        if self.fix_aspect_ratio:
-            flags |= cv2.CALIB_FIX_ASPECT_RATIO
         if self.zero_tangent_dist:
             flags |= cv2.CALIB_ZERO_TANGENT_DIST
         return flags
@@ -182,13 +192,25 @@ class MonocularCalibrator:
         obj_pts_f32 = [np.asarray(p, dtype=np.float32).reshape(-1, 3) for p in object_points_list]
         img_pts_f32 = [np.asarray(p, dtype=np.float32).reshape(-1, 1, 2) for p in image_points_list]
 
+        w, h = image_size
         cv_flags = self.flags.to_opencv_flags()
+
+        # Inizializzazione fisica di K al centro del sensore
+        K_init = None
+        if self.flags.fix_principal_point or self.flags.fix_aspect_ratio:
+            cv_flags |= cv2.CALIB_USE_INTRINSIC_GUESS
+            initial_f = float(max(w, h) * 2.0)
+            K_init = np.array([
+                [initial_f, 0.0, w / 2.0],
+                [0.0, initial_f, h / 2.0],
+                [0.0, 0.0, 1.0],
+            ], dtype=np.float64)
 
         ret, K, dist, rvecs, tvecs, std_intr, std_extr, per_view = cv2.calibrateCameraExtended(
             objectPoints=obj_pts_f32,
             imagePoints=img_pts_f32,
             imageSize=image_size,
-            cameraMatrix=None,
+            cameraMatrix=K_init,
             distCoeffs=None,
             flags=cv_flags,
             criteria=self.criteria,

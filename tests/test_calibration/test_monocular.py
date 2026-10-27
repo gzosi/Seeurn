@@ -23,30 +23,30 @@ from seeurn.data.preprocessor import ImagePreprocessor
 
 
 class TestDistortionModelFlags:
-    """Verifica la configurazione dei flag di distorsione OpenCV."""
+    """Verifica la configurazione dei flag di distorsione e dei vincoli fisici OpenCV."""
 
-    def test_default_flags_enable_extended_model(self):
+    def test_default_flags_enforce_physics(self):
         flags = DistortionModelFlags()
-        assert flags.use_rational_model is True
-        assert flags.use_thin_prism is True
-        assert flags.use_tilted is True
-        assert flags.fix_aspect_ratio is False
+        assert flags.fix_aspect_ratio is True
+        assert flags.fix_principal_point is True
+        assert flags.fix_k3 is True
+        assert flags.use_rational_model is False
 
+        cv_flags = flags.to_opencv_flags()
+        assert cv_flags & cv2.CALIB_FIX_ASPECT_RATIO
+        assert cv_flags & cv2.CALIB_FIX_PRINCIPAL_POINT
+        assert cv_flags & cv2.CALIB_FIX_K3
+
+    def test_extended_distortion_flags(self):
+        flags = DistortionModelFlags(
+            use_rational_model=True,
+            use_thin_prism=True,
+            use_tilted=True,
+        )
         cv_flags = flags.to_opencv_flags()
         assert cv_flags & cv2.CALIB_RATIONAL_MODEL
         assert cv_flags & cv2.CALIB_THIN_PRISM_MODEL
         assert cv_flags & cv2.CALIB_TILTED_MODEL
-
-    def test_standard_pinhole_flags(self):
-        flags = DistortionModelFlags(
-            use_rational_model=False,
-            use_thin_prism=False,
-            use_tilted=False,
-        )
-        cv_flags = flags.to_opencv_flags()
-        assert not (cv_flags & cv2.CALIB_RATIONAL_MODEL)
-        assert not (cv_flags & cv2.CALIB_THIN_PRISM_MODEL)
-        assert not (cv_flags & cv2.CALIB_TILTED_MODEL)
 
 
 class TestCameraIntrinsics:
@@ -176,11 +176,12 @@ class TestRealDataMonocularCalibration:
     def test_monocular_calibration_with_out_of_sample_validation(self, catalog: CalibrationCatalog):
         preprocessor = ImagePreprocessor()
         detector = RobustCheckerboardDetector(CheckerboardConfig(pattern_size=(15, 9), square_size_mm=5.0))
+        # Utilizziamo i vincoli fisici ottici: pixel quadrati e centro ottico fisso
         calibrator = MonocularCalibrator(
             flags=DistortionModelFlags(
-                use_rational_model=True,
-                use_thin_prism=True,
-                use_tilted=False,  # Opzionale, stabilità ottimale con rational + thin_prism
+                fix_aspect_ratio=True,
+                fix_principal_point=True,
+                fix_k3=True,
             )
         )
 
@@ -217,12 +218,15 @@ class TestRealDataMonocularCalibration:
             camera_id=1,
         )
 
-        # Verifica errore di riproiezione sub-pixel sul training set (< 0.5 px)
-        assert intrinsics.mean_reprojection_error < 0.5, (
+        # Verifica vincoli fisici ottici
+        assert np.isclose(intrinsics.K[0, 0], intrinsics.K[1, 1]), "I pixel devono essere quadrati (fx == fy)"
+        assert np.isclose(intrinsics.K[0, 2], 1088.0), f"Punto principale X deve essere al centro (1088): {intrinsics.K[0, 2]}"
+        assert np.isclose(intrinsics.K[1, 2], 700.0), f"Punto principale Y deve essere al centro (700): {intrinsics.K[1, 2]}"
+
+        # Verifica errore di riproiezione sub-pixel sul training set (< 1.0 px)
+        assert intrinsics.mean_reprojection_error < 1.0, (
             f"Errore di riproiezione train troppo alto: {intrinsics.mean_reprojection_error:.3f} px"
         )
-        assert intrinsics.K[0, 0] > 0
-        assert intrinsics.dist_coeffs.size >= 8
 
         # 2. Validazione out-of-sample su test set (frame mai visti prima!)
         test_error, per_frame_errors = calibrator.evaluate_on_test_set(
@@ -231,7 +235,7 @@ class TestRealDataMonocularCalibration:
             intrinsics=intrinsics,
         )
 
-        # L'errore medio out-of-sample monoculare con solvePnP su pose mai viste deve essere <= 1.2 px
+        # L'errore medio out-of-sample monoculare con solvePnP su pose mai viste deve essere compreso attorno a 1 px
         assert test_error < 1.2, (
             f"Errore di riproiezione out-of-sample troppo alto: {test_error:.3f} px"
         )
