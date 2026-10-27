@@ -64,7 +64,7 @@ class RobustCheckerboardDetector:
         config: Optional[CheckerboardConfig] = None,
         clahe_clip_limit: float = 3.0,
         clahe_grid_size: Tuple[int, int] = (8, 8),
-        inverted_cameras: Tuple[int, ...] = (3,),
+        inverted_cameras: Tuple[int, ...] = (),
     ):
         self.config = config or CheckerboardConfig()
         self.clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_grid_size)

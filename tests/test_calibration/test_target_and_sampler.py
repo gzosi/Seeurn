@@ -56,8 +56,8 @@ class TestCanonicalOrientation:
         np.testing.assert_allclose(canonical[0], [200.0, 100.0])
 
     def test_inverted_camera3_canonicalization(self):
-        """Per Cam 3 (montata capovolta, bullone in basso), PT_0 deve avere y0 > y_end."""
-        detector = RobustCheckerboardDetector()
+        """Per Cam 3 se non pre-processata (bullone in basso), PT_0 deve avere y0 > y_end."""
+        detector = RobustCheckerboardDetector(inverted_cameras=(3,))
         # Punti fittizi con PT_0 in alto (sbagliato per Cam 3 che è capovolta)
         fake_pts = np.zeros((135, 2), dtype=np.float32)
         fake_pts[0] = [200.0, 100.0]    # In alto
@@ -156,9 +156,5 @@ class TestRealCalibrationDetection:
             assert res.image_points.shape == (135, 2)
             assert res.object_points.shape == (135, 3)
 
-            if cam_id in (1, 2):
-                # Origine in alto (vicino al bullone)
-                assert res.image_points[0, 1] < res.image_points[-1, 1]
-            else:
-                # Cam 3 capovolta: origine in basso (vicino al bullone)
-                assert res.image_points[0, 1] > res.image_points[-1, 1]
+            # Tutte le telecamere hanno l'origine PT_0 in alto in modo coerente nello spazio di laboratorio
+            assert res.image_points[0, 1] < res.image_points[-1, 1]

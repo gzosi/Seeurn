@@ -24,6 +24,12 @@ from seeurn.calibration.monocular import (
     CameraIntrinsics,
     MonocularCalibrator,
 )
+from seeurn.calibration.stereo import (
+    StereoExtrinsics,
+    compute_epipolar_distance,
+    EpipolarGraph,
+    StereoPairCalibrator,
+)
 
 __all__ = [
     "CheckerboardConfig",
@@ -41,4 +47,8 @@ __all__ = [
     "DistortionModelFlags",
     "CameraIntrinsics",
     "MonocularCalibrator",
+    "StereoExtrinsics",
+    "compute_epipolar_distance",
+    "EpipolarGraph",
+    "StereoPairCalibrator",
 ]
