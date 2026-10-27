@@ -30,6 +30,11 @@ from seeurn.calibration.stereo import (
     EpipolarGraph,
     StereoPairCalibrator,
 )
+from seeurn.calibration.synchronizer import (
+    SynchronizedCameraPose,
+    MotionSynchronizationResult,
+    MotionSynchronizer,
+)
 
 __all__ = [
     "CheckerboardConfig",
@@ -51,4 +56,7 @@ __all__ = [
     "compute_epipolar_distance",
     "EpipolarGraph",
     "StereoPairCalibrator",
+    "SynchronizedCameraPose",
+    "MotionSynchronizationResult",
+    "MotionSynchronizer",
 ]
