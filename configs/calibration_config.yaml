@@ -1,0 +1,29 @@
+# ==============================================================================
+# Seeurn - Configurazione Pipeline di Calibrazione Multi-Camera (4 Fasi)
+# ==============================================================================
+
+# Specifiche geometriche della scacchiera
+target:
+  pattern_size: [15, 9]     # Spigoli interni (nx=15, ny=9 -> 135 spigoli)
+  square_size_mm: 5.0       # Dimensione del lato del quadratino in millimetri
+
+# Strategia di campionamento disgiunto per evitare correlazione temporale e data leakage
+sampling:
+  random_seed: 42           # Seme per riproducibilità scientifica
+  min_frame_spacing: 5      # Minimo numero di frame tra due scatti consecutivi
+  frames_per_group:
+    mono_train: 50          # Frame per stimare K e distorsioni per ciascuna camera
+    mono_test: 50           # Frame out-of-sample per valutare l'errore di riproiezione
+    stereo_train: 50        # Triplette per stimare la geometria estrinseca (R, T)
+    stereo_test: 50         # Triplette per valutare l'errore epipolare su pose mai viste
+    ba_train: 50            # Triplette per il Bundle Adjustment globale non lineare
+    final_test: 50          # Validazione metrica finale cieca su distanza nota di 5.0 mm
+
+# Parametri specifici per la Fase 1 (Corner Extraction & Quality Check)
+phase1:
+  output_dir: "tests/output/phase1_corner_check"
+  save_diagnostic_images: true
+  max_diagnostic_images_per_cam: 3
+  clahe_clip_limit: 3.0
+  clahe_grid_size: [8, 8]
+

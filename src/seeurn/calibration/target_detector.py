@@ -98,39 +98,50 @@ class RobustCheckerboardDetector:
 
     def detect(self, image: np.ndarray, camera_id: int = 1) -> DetectionResult:
         """
-        Rileva gli spigoli della scacchiera usando una strategia multi-stadio:
-        1. Sector-Based (SB) diretto sull'immagine in scala di grigi.
-        2. Sector-Based (SB) sull'immagine equalizzata con CLAHE.
-        3. Algoritmo classico con Adaptive Threshold + raffinamento sub-pixel (cornerSubPix).
+        Rileva gli spigoli della scacchiera usando una strategia multi-stadio rapida e robusta:
+        1. Sector-Based (SB) con CALIB_CB_NORMALIZE_IMAGE (ultra-veloce, sub-pixel).
+        2. Sector-Based (SB) su immagine CLAHE.
+        3. Fallback classico con Adaptive Threshold + cornerSubPix (con accelerazione su immagini HD).
         """
         if image is None or image.size == 0:
             return DetectionResult(False, None, None, "invalid_image")
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
         p_size = self.config.pattern_size
-        sb_flags = cv2.CALIB_CB_EXHAUSTIVE | cv2.CALIB_CB_ACCURACY | cv2.CALIB_CB_NORMALIZE_IMAGE
 
-        # Stadio 1: Sector-Based su immagine grezza
+        # Stadio 1: Sector-Based rapido
+        sb_flags = cv2.CALIB_CB_NORMALIZE_IMAGE
         found, corners = cv2.findChessboardCornersSB(gray, p_size, flags=sb_flags)
         if found and corners is not None:
             pts = self.canonicalize_corners(corners, camera_id=camera_id)
             return DetectionResult(True, pts, self._ideal_obj_pts.copy(), "sb_raw")
 
-        # Stadio 2: Sector-Based su immagine migliorata con CLAHE
+        # Stadio 2: Sector-Based su immagine CLAHE
         enhanced = self.clahe.apply(gray)
         found, corners = cv2.findChessboardCornersSB(enhanced, p_size, flags=sb_flags)
         if found and corners is not None:
             pts = self.canonicalize_corners(corners, camera_id=camera_id)
             return DetectionResult(True, pts, self._ideal_obj_pts.copy(), "sb_clahe")
 
-        # Stadio 3: Fallback classico Adaptive Threshold + SubPix
+        # Stadio 3: Fallback classico Adaptive Threshold + raffinamento sub-pixel
         std_flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
-        found, corners = cv2.findChessboardCorners(gray, p_size, flags=std_flags)
-        if found and corners is not None:
-            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 0.001)
-            refined = cv2.cornerSubPix(gray, corners, (5, 5), (-1, -1), criteria)
-            pts = self.canonicalize_corners(refined, camera_id=camera_id)
-            return DetectionResult(True, pts, self._ideal_obj_pts.copy(), "adaptive_subpix")
+        h, w = gray.shape[:2]
+        if w * h > 1_500_000:
+            small = cv2.resize(gray, (0, 0), fx=0.5, fy=0.5)
+            found_small, corners_small = cv2.findChessboardCorners(small, p_size, flags=std_flags)
+            if found_small and corners_small is not None:
+                corners_scaled = corners_small * 2.0
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                refined = cv2.cornerSubPix(gray, corners_scaled, (5, 5), (-1, -1), criteria)
+                pts = self.canonicalize_corners(refined, camera_id=camera_id)
+                return DetectionResult(True, pts, self._ideal_obj_pts.copy(), "adaptive_subpix")
+        else:
+            found, corners = cv2.findChessboardCorners(gray, p_size, flags=std_flags)
+            if found and corners is not None:
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                refined = cv2.cornerSubPix(gray, corners, (5, 5), (-1, -1), criteria)
+                pts = self.canonicalize_corners(refined, camera_id=camera_id)
+                return DetectionResult(True, pts, self._ideal_obj_pts.copy(), "adaptive_subpix")
 
         return DetectionResult(False, None, None, "not_found")
 

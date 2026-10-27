@@ -99,3 +99,4 @@ class ImagePreprocessor:
             cam_id: self.load_image(path, camera_id=cam_id, grayscale=grayscale)
             for cam_id, path in triplet.cam_paths.items()
         }
+
