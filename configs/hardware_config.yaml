@@ -1,0 +1,17 @@
+# ==============================================================================
+# Seeurn - Configurazione Hardware Telecamere
+# ==============================================================================
+# Definisce l'orientamento fisico delle telecamere nel tunnel di cavitazione.
+# Le camere 1 e 2 sono montate normalmente (0°).
+# La camera 3 è montata capovolta di 180° per vincoli di spazio/finestra piana.
+# ==============================================================================
+
+camera_rotations:
+  1: 0
+  2: 0
+  3: 180
+
+camera_names:
+  1: "cam1_front"
+  2: "cam2_oblique"
+  3: "cam3_lateral_inverted"
