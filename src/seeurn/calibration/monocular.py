@@ -248,3 +248,110 @@ class MonocularCalibrator:
 
         mean_error = float(np.mean(per_frame_errors))
         return mean_error, per_frame_errors
+
+    def export_artifacts(
+        self,
+        intrinsics: CameraIntrinsics,
+        output_dir: Union[str, Path],
+        json_dir: Optional[Union[str, Path]] = None,
+        sample_image: Optional[np.ndarray] = None,
+        sample_measured: Optional[np.ndarray] = None,
+        sample_projected: Optional[np.ndarray] = None,
+        residuals_2d: Optional[np.ndarray] = None,
+        per_frame_errors: Optional[Sequence[float]] = None,
+        test_error: Optional[float] = None,
+    ) -> Dict[str, Path]:
+        """
+        Salva su disco tutti gli output analitici e visuali della calibrazione monoculare:
+        1. File JSON con parametri intrinseci K e distorsioni (in json_dir e in output_dir).
+        2. Immagine comparativa side-by-side (Originale distorta vs Rettificata).
+        3. Dashboard analitica (scatter 2D dei residui du, dv e istogramma errori per frame).
+        4. Immagine campione con overlay dei corner riproiettati e vettori residui amplificati.
+        5. Report testuale formattato in Markdown.
+
+        Returns:
+            Dizionario con i percorsi di tutti i file generati.
+        """
+        out_p = Path(output_dir)
+        out_p.mkdir(parents=True, exist_ok=True)
+        saved: Dict[str, Path] = {}
+        cam_id = intrinsics.camera_id
+
+        # 1. Salva parametri JSON
+        json_filename = f"camera_{cam_id}_intrinsics.json"
+        p_json_out = out_p / json_filename
+        intrinsics.save_to_json(p_json_out)
+        saved["intrinsics_json"] = p_json_out
+
+        if json_dir is not None:
+            j_dir = Path(json_dir)
+            j_dir.mkdir(parents=True, exist_ok=True)
+            p_json_shared = j_dir / json_filename
+            intrinsics.save_to_json(p_json_shared)
+            saved["shared_json"] = p_json_shared
+
+        from seeurn.calibration.visualizer import CornerVisualizer
+        vis = CornerVisualizer()
+
+        # 2. Immagine side-by-side rettificazione
+        if sample_image is not None:
+            undistorted = intrinsics.undistort(sample_image)
+            comp = vis.draw_undistortion_comparison(sample_image, undistorted, camera_id=cam_id)
+            comp_path = out_p / f"cam{cam_id}_undistortion_comparison.png"
+            cv2.imwrite(str(comp_path), comp)
+            saved["undistortion_comparison"] = comp_path
+
+        # 3. Immagine overlay corner riproiettati
+        if sample_image is not None and sample_measured is not None and sample_projected is not None:
+            overlay = vis.draw_reprojection_overlay(
+                image=sample_image,
+                measured_corners=sample_measured,
+                projected_corners=sample_projected,
+                camera_id=cam_id,
+            )
+            overlay_path = out_p / f"cam{cam_id}_reprojection_overlay.png"
+            cv2.imwrite(str(overlay_path), overlay)
+            saved["reprojection_overlay"] = overlay_path
+
+        # 4. Dashboard grafica residui e per-frame error
+        if residuals_2d is not None and per_frame_errors is not None:
+            dash = vis.draw_reprojection_dashboard(
+                residuals_2d=residuals_2d,
+                per_frame_errors=per_frame_errors,
+                camera_id=cam_id,
+                train_rms=intrinsics.mean_reprojection_error,
+                test_rms=test_error or 0.0,
+            )
+            dash_path = out_p / f"cam{cam_id}_reprojection_dashboard.png"
+            cv2.imwrite(str(dash_path), dash)
+            saved["reprojection_dashboard"] = dash_path
+
+        # 5. Report Markdown
+        fx, fy = float(intrinsics.K[0, 0]), float(intrinsics.K[1, 1])
+        cx, cy = float(intrinsics.K[0, 2]), float(intrinsics.K[1, 2])
+        dist_list = intrinsics.dist_coeffs.flatten().tolist()
+        dist_str = ", ".join(f"{d:.6f}" for d in dist_list[:8])
+
+        test_str = f"{test_error:.4f} px" if test_error is not None else "N/A"
+
+        md_content = f"""# Report Calibrazione Monoculare - Camera {cam_id}
+
+- **Risoluzione Sensore:** {intrinsics.image_size[0]} x {intrinsics.image_size[1]} px
+- **Lunghezza Focale ($f_x, f_y$):** {fx:.2f} px, {fy:.2f} px
+- **Punto Principale ($c_x, c_y$):** {cx:.2f} px, {cy:.2f} px
+- **Errore RMS Training:** {intrinsics.mean_reprojection_error:.4f} px
+- **Errore RMS Test (Out-of-Sample):** {test_str}
+- **Numero Parametri Distorsione:** {len(dist_list)}
+- **Coefficienti Principali ($k_1..k_6, p_1, p_2$):** `{dist_str}`
+
+### File Grafici Diagnostici Generati:
+- Rettificazione distorsione: `{saved.get('undistortion_comparison', '')}`
+- Dashboard dispersione residui: `{saved.get('reprojection_dashboard', '')}`
+- Overlay corner riproiettati: `{saved.get('reprojection_overlay', '')}`
+"""
+        md_path = out_p / f"cam{cam_id}_monocular_report.md"
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        saved["report_md"] = md_path
+
+        return saved
