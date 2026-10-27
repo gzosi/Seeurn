@@ -114,3 +114,4 @@ class TestRealDataCatalog:
         # Verifica che sia un'immagine valida (altezza > 0, larghezza > 0)
         h, w = first_frame[1].shape
         assert h > 100 and w > 100
+

@@ -61,6 +61,7 @@ MANIFEST
 
 # Testing & Coverage
 .pytest_cache/
+tests/output/
 .tox/
 .nox/
 .coverage
