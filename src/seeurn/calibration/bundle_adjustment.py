@@ -196,6 +196,26 @@ class GlobalCalibrationResult:
             data = json.load(f)
         return cls.from_dict(data)
 
+    @classmethod
+    def load_for_wake(
+        cls,
+        wake: str = "wake2",
+        base_dir: Union[str, Path] = "configs/calibration",
+    ) -> "GlobalCalibrationResult":
+        """
+        Carica i parametri di calibrazione globale specifici per una determinata scia (es. 'wake2' o 'wake4').
+        Se esiste la sottocartella specifica (es. configs/calibration/wake4/calibration_global.json), carica quella;
+        altrimenti ricade sul file di default alla radice.
+        """
+        base_p = Path(base_dir)
+        wake_file = base_p / wake / "calibration_global.json"
+        if wake_file.exists():
+            return cls.load_from_json(wake_file)
+        fallback_file = base_p / "calibration_global.json"
+        if fallback_file.exists():
+            return cls.load_from_json(fallback_file)
+        raise FileNotFoundError(f"Nessun file di calibrazione trovato per {wake} in {base_p}")
+
 
 class GlobalBundleAdjuster:
     """

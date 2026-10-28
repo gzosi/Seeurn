@@ -247,3 +247,24 @@ class TestBundleAdjustmentRealData:
         assert artifacts["reconstruction_3d"].exists()
         assert artifacts["report"].exists()
 
+    def test_load_for_wake_wake2_and_wake4(self):
+        """Verifica il caricamento differenziato per scia tramite load_for_wake."""
+        res_w2 = GlobalCalibrationResult.load_for_wake("wake2", base_dir=self.CONFIG_DIR)
+        res_w4 = GlobalCalibrationResult.load_for_wake("wake4", base_dir=self.CONFIG_DIR)
+
+        assert isinstance(res_w2, GlobalCalibrationResult)
+        assert isinstance(res_w4, GlobalCalibrationResult)
+
+        # Baseline wake 2
+        b12_w2 = np.linalg.norm(res_w2.camera_poses[2].C - res_w2.camera_poses[1].C)
+        # Baseline wake 4
+        b12_w4 = np.linalg.norm(res_w4.camera_poses[2].C - res_w4.camera_poses[1].C)
+
+        assert 815.0 < b12_w2 < 822.0
+        assert 795.0 < b12_w4 < 802.0
+
+        # Verifica errore sub-pixel su entrambe le wake
+        assert res_w2.mean_reprojection_error_px < 1.2
+        assert res_w4.mean_reprojection_error_px < 1.2
+
+
