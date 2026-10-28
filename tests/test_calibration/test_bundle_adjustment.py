@@ -260,8 +260,10 @@ class TestBundleAdjustmentRealData:
         # Baseline wake 4
         b12_w4 = np.linalg.norm(res_w4.camera_poses[2].C - res_w4.camera_poses[1].C)
 
-        assert 815.0 < b12_w2 < 822.0
-        assert 795.0 < b12_w4 < 802.0
+        # Verifica convergenza ad alto campionamento: baseline stabile a ~800.3 mm su entrambe le wake
+        assert 798.0 < b12_w2 < 803.0
+        assert 798.0 < b12_w4 < 803.0
+        assert abs(b12_w2 - b12_w4) < 1.0, f"Discrepanza baseline troppo alta: {abs(b12_w2 - b12_w4):.3f} mm"
 
         # Verifica errore sub-pixel su entrambe le wake
         assert res_w2.mean_reprojection_error_px < 1.2
