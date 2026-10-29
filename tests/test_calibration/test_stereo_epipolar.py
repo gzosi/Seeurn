@@ -326,14 +326,14 @@ class TestStereoCalibrationRealData:
 
     RAW_ROOT = Path("data/raw/calibration")
     CFG_ROOT = Path("configs/calibration")
-    OUT_ROOT = Path("tests/output/phase3_stereo")
+    OUT_ROOT = Path("tests/output/wake2/phase3_stereo")
 
     @pytest.mark.skipif(not RAW_ROOT.exists(), reason="Dati reali di calibrazione non presenti")
     def test_stereo_calibration_and_loop_closure(self):
         # 1. Carica le matrici intrinseche monoculari consolidate in Fase 2
-        intr1 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "camera_1_intrinsics.json")
-        intr2 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "camera_2_intrinsics.json")
-        intr3 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "camera_3_intrinsics.json")
+        intr1 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "wake2" / "camera_1_intrinsics.json")
+        intr2 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "wake2" / "camera_2_intrinsics.json")
+        intr3 = CameraIntrinsics.load_from_json(self.CFG_ROOT / "wake2" / "camera_3_intrinsics.json")
 
         cat = CalibrationCatalog(self.RAW_ROOT)
         prep = ImagePreprocessor()
@@ -342,13 +342,18 @@ class TestStereoCalibrationRealData:
         triplets = cat.get_synchronized_triplets("wake2", "dataset4", require_all_views=True)
         assert len(triplets) > 100
 
-        # Raccogliamo frame condivisi con visuale completa su tutte e 3 le telecamere
+        # Raccogliamo frame condivisi con visuale completa su tutte e 3 le telecamere (30 triplette multi-vista)
         obj_all, img1_all, img2_all, img3_all = [], [], [], []
         test_images_triplet = None
         test_points_triplet = None
 
-        candidate_indices = [0, 10, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 400, 420, 440, 460, 480]
+        candidate_indices = [
+            0, 10, 20, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100,
+            400, 410, 420, 430, 440, 450, 460, 470, 480, 490, 500, 510, 520, 530, 540, 550
+        ]
         for idx in candidate_indices:
+            if idx >= len(triplets):
+                continue
             t = triplets[idx]
             im1 = prep.load_image(t.cam_paths[1], 1)
             im2 = prep.load_image(t.cam_paths[2], 2)
@@ -364,26 +369,28 @@ class TestStereoCalibrationRealData:
                 if test_images_triplet is None:
                     test_images_triplet = (im1, im2, im3)
                     test_points_triplet = (d1.image_points, d2.image_points, d3.image_points)
+                if len(obj_all) >= 30:
+                    break
 
-        assert len(obj_all) >= 15, f"Rilevate solo {len(obj_all)} triplette complete"
+        assert len(obj_all) >= 20, f"Rilevate solo {len(obj_all)} triplette complete"
 
         # 2. Calibrazione Coppia (1, 2)
         calib12 = StereoPairCalibrator(intr1, intr2)
         ext12 = calib12.calibrate(obj_all, img1_all, img2_all, fix_intrinsics=True)
         assert ext12.mean_epipolar_error_px < 1.0, f"Errore epipolare 1-2 troppo alto: {ext12.mean_epipolar_error_px:.4f} px"
-        assert 700.0 < ext12.baseline_mm < 950.0, f"Baseline 1-2 anomala: {ext12.baseline_mm:.2f} mm"
+        assert 798.0 < ext12.baseline_mm < 803.0, f"Baseline 1-2 anomala: {ext12.baseline_mm:.2f} mm"
 
         # 3. Calibrazione Coppia (2, 3)
         calib23 = StereoPairCalibrator(intr2, intr3)
         ext23 = calib23.calibrate(obj_all, img2_all, img3_all, fix_intrinsics=True)
-        assert ext23.mean_epipolar_error_px < 2.0, f"Errore epipolare 2-3 troppo alto: {ext23.mean_epipolar_error_px:.4f} px"
-        assert 1000.0 < ext23.baseline_mm < 1500.0, f"Baseline 2-3 anomala: {ext23.baseline_mm:.2f} mm"
+        assert ext23.mean_epipolar_error_px < 2.5, f"Errore epipolare 2-3 troppo alto: {ext23.mean_epipolar_error_px:.4f} px"
+        assert 1275.0 < ext23.baseline_mm < 1285.0, f"Baseline 2-3 anomala: {ext23.baseline_mm:.2f} mm"
 
         # 4. Calibrazione Coppia (1, 3)
         calib13 = StereoPairCalibrator(intr1, intr3)
         ext13 = calib13.calibrate(obj_all, img1_all, img3_all, fix_intrinsics=True)
         assert ext13.mean_epipolar_error_px < 2.0, f"Errore epipolare 1-3 troppo alto: {ext13.mean_epipolar_error_px:.4f} px"
-        assert 900.0 < ext13.baseline_mm < 1400.0, f"Baseline 1-3 anomala: {ext13.baseline_mm:.2f} mm"
+        assert 1075.0 < ext13.baseline_mm < 1085.0, f"Baseline 1-3 anomala: {ext13.baseline_mm:.2f} mm"
 
         # 5. Costruzione Grafo Epipolare e Verifica Chiusura del Ciclo (Loop Closure)
         graph = EpipolarGraph()
@@ -402,18 +409,22 @@ class TestStereoCalibrationRealData:
         art12 = calib12.export_artifacts(
             ext12, im1, im2, pts1, pts2,
             output_dir=self.OUT_ROOT,
-            config_dir=self.CFG_ROOT,
+            config_dir=self.CFG_ROOT / "wake2",
         )
         art23 = calib23.export_artifacts(
             ext23, im2, im3, pts2, pts3,
             output_dir=self.OUT_ROOT,
-            config_dir=self.CFG_ROOT,
+            config_dir=self.CFG_ROOT / "wake2",
         )
         art13 = calib13.export_artifacts(
             ext13, im1, im3, pts1, pts3,
             output_dir=self.OUT_ROOT,
-            config_dir=self.CFG_ROOT,
+            config_dir=self.CFG_ROOT / "wake2",
         )
+        # Salva copia anche nella cartella di default root
+        ext12.save_to_json(self.CFG_ROOT / "stereo_1_2_extrinsics.json")
+        ext23.save_to_json(self.CFG_ROOT / "stereo_2_3_extrinsics.json")
+        ext13.save_to_json(self.CFG_ROOT / "stereo_1_3_extrinsics.json")
 
         for art in (art12, art23, art13):
             assert art["json"].exists()

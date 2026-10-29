@@ -168,13 +168,13 @@ class TestMotionSynchronizationRealData:
     """Verifica della sincronizzazione globale sulle calibrazioni stereo reali del setup Seeurn."""
 
     CONFIG_DIR = Path("configs/calibration")
-    OUT_DIR = Path("tests/output/phase4a_synchronization")
+    OUT_DIR = Path("tests/output/wake2/phase4a_synchronization")
 
     def test_synchronize_seeurn_real_stereos(self):
-        # Carica le 3 calibrazioni stereoscopiche consolidate nella Fase 3
-        ext12 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "stereo_1_2_extrinsics.json")
-        ext23 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "stereo_2_3_extrinsics.json")
-        ext13 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "stereo_1_3_extrinsics.json")
+        # Carica le 3 calibrazioni stereoscopiche consolidate nella Fase 3 (Wake 2)
+        ext12 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "wake2" / "stereo_1_2_extrinsics.json")
+        ext23 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "wake2" / "stereo_2_3_extrinsics.json")
+        ext13 = StereoExtrinsics.load_from_json(self.CONFIG_DIR / "wake2" / "stereo_1_3_extrinsics.json")
 
         graph = EpipolarGraph()
         graph.add_edge(ext12)
@@ -190,10 +190,11 @@ class TestMotionSynchronizationRealData:
         np.testing.assert_allclose(pose1.T, np.zeros((3, 1)), atol=1e-7)
         np.testing.assert_allclose(pose1.C, np.zeros((3, 1)), atol=1e-7)
 
-        # 2. Camera 2: distanza del centro C2 da C1 deve coincidere con la baseline 1-2 (~819 mm)
+        # 2. Camera 2: distanza del centro C2 da C1 deve coincidere con la baseline 1-2 (~800.3 mm)
         pose2 = result.camera_poses[2]
         dist_12 = float(np.linalg.norm(pose2.C - pose1.C))
         assert np.isclose(dist_12, ext12.baseline_mm, atol=2.0), f"Distanza C1-C2 anomala: {dist_12:.2f} mm vs {ext12.baseline_mm:.2f} mm"
+        assert 798.0 < dist_12 < 803.0, f"Baseline 1-2 fuori tolleranza: {dist_12:.2f} mm"
 
         # 3. Camera 3: distanze del centro C3 da C1 e C2 devono essere coerenti con le baseline misurate
         pose3 = result.camera_poses[3]
@@ -201,6 +202,8 @@ class TestMotionSynchronizationRealData:
         dist_23 = float(np.linalg.norm(pose3.C - pose2.C))
         assert np.isclose(dist_13, ext13.baseline_mm, atol=4.0), f"Distanza C1-C3 anomala: {dist_13:.2f} mm vs {ext13.baseline_mm:.2f} mm"
         assert np.isclose(dist_23, ext23.baseline_mm, atol=4.0), f"Distanza C2-C3 anomala: {dist_23:.2f} mm vs {ext23.baseline_mm:.2f} mm"
+        assert 1075.0 < dist_13 < 1085.0
+        assert 1275.0 < dist_23 < 1285.0
 
         # 4. Residui e discrepanze di chiusura
         assert result.max_rotation_discrepancy_deg < 0.50
@@ -210,8 +213,9 @@ class TestMotionSynchronizationRealData:
         artifacts = sync.export_artifacts(
             result=result,
             output_dir=self.OUT_DIR,
-            config_dir=self.CONFIG_DIR,
+            config_dir=self.CONFIG_DIR / "wake2",
         )
+        result.save_to_json(self.CONFIG_DIR / "synchronized_camera_poses.json")
 
         assert artifacts["json_output"].exists()
         assert artifacts["json_config"].exists()

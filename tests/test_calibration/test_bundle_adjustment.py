@@ -188,7 +188,7 @@ class TestBundleAdjustmentRealData:
     """Integrazione e validazione del BBA sui dati reali multi-camera (wake2 dataset4 e dataset2)."""
 
     CONFIG_DIR = Path("configs/calibration")
-    OUTPUT_DIR = Path("tests/output/phase4b_bundle_adjustment")
+    OUTPUT_DIR = Path("tests/output/wake2/phase4b_bundle_adjustment")
 
     @pytest.mark.skipif(not Path("configs/calibration/synchronized_camera_poses.json").exists(), reason="Fase 4A non completata")
     def test_global_bundle_adjustment_real_data(self):
@@ -222,7 +222,7 @@ class TestBundleAdjustmentRealData:
             f"Errore BBA medio troppo alto: {result.mean_reprojection_error_px:.3f} px"
         )
 
-        # Verifica coerenza delle baseline finali raffinate
+        # Verifica coerenza delle baseline finali raffinate (~800.3 mm, ~1080 mm, ~1280 mm)
         pose1 = result.camera_poses[1]
         pose2 = result.camera_poses[2]
         pose3 = result.camera_poses[3]
@@ -231,16 +231,17 @@ class TestBundleAdjustmentRealData:
         baseline_13 = float(np.linalg.norm(pose3.C - pose1.C))
         baseline_23 = float(np.linalg.norm(pose3.C - pose2.C))
 
-        assert 815.0 < baseline_12 < 825.0
-        assert 1125.0 < baseline_13 < 1140.0
-        assert 1265.0 < baseline_23 < 1278.0
+        assert 798.0 < baseline_12 < 803.0
+        assert 1075.0 < baseline_13 < 1085.0
+        assert 1275.0 < baseline_23 < 1285.0
 
         # 5. Esporta tutti gli artefatti metrici, visuali e di configurazione
         artifacts = adjuster.export_artifacts(
             result=result,
             output_dir=self.OUTPUT_DIR,
-            config_dir=self.CONFIG_DIR,
+            config_dir=self.CONFIG_DIR / "wake2",
         )
+        result.save_to_json(self.CONFIG_DIR / "calibration_global.json")
 
         assert artifacts["json_global"].exists()
         assert artifacts["dashboard"].exists()

@@ -1,14 +1,20 @@
 """
-Script per rigenerare ed aggiornare tutti gli output dei test e gli artefatti grafici/metrici
+Script per passare al setaccio, rigenerare e pulire tutti gli output dei test e gli artefatti grafici/metrici
 della calibrazione Seeurn (Modulo 02) per Wake 2 e Wake 4 a campionamento robusto (N=75 / N=30).
 
-Genera:
-- tests/output/wake2/ (e mirror in tests/output/phaseX_.../)
-- tests/output/wake4/ (con phase2, phase3, phase4a, phase4b)
-- tests/output/calibration_synthesis_report.md (report comparativo per paper e tesi)
+Garantisce:
+1. Eliminazione totale delle directory piatte obsolete in tests/output/ (phase2, phase3, phase4a, phase4b).
+2. Struttura pulita ed elegante organizzata per scia:
+   - tests/output/wake2/ (phase2, phase3, phase4a, phase4b)
+   - tests/output/wake4/ (phase2, phase3, phase4a, phase4b)
+   - tests/output/phase1_corner_check/ (mappe di copertura del sensore comune a tutte le prove)
+   - tests/output/calibration_synthesis_report.md (master report comparativo pronto per il paper)
+   - tests/output/README.md (indice esplicativo chiaro)
+3. Sincronizzazione al 100% di tutti i file JSON in configs/calibration/wake2/, configs/calibration/wake4/ e configs/calibration/ (root).
 """
 
 from pathlib import Path
+import shutil
 import json
 import cv2
 import numpy as np
@@ -35,13 +41,25 @@ calibrator = MonocularCalibrator(
 )
 
 out_base = Path("tests/output")
+cfg_base = Path("configs/calibration")
+
+# 0. Pulizia delle directory piatte obsolete in tests/output/
+print("Cleaning up obsolete flat directories in tests/output/...")
+for old_dir in ("phase2_monocular", "phase3_stereo", "phase4a_synchronization", "phase4b_bundle_adjustment"):
+    target_dir = out_base / old_dir
+    if target_dir.exists() and target_dir.is_dir():
+        shutil.rmtree(target_dir)
+        print(f"  [DELETED OBSOLETE] {target_dir}")
 
 for wake in ("wake2", "wake4"):
     print(f"\n==========================================")
-    print(f" GENERATING ARTIFACTS FOR {wake.upper()}")
+    print(f" GENERATING CLEAN ARTIFACTS FOR {wake.upper()}")
     print(f"==========================================")
     
     wake_dir = out_base / wake
+    wake_cfg = cfg_base / wake
+    wake_cfg.mkdir(parents=True, exist_ok=True)
+    
     wake_p2 = wake_dir / "phase2_monocular"
     wake_p3 = wake_dir / "phase3_stereo"
     wake_p4a = wake_dir / "phase4a_synchronization"
@@ -89,6 +107,7 @@ for wake in ("wake2", "wake4"):
         calibrator.export_artifacts(
             intrinsics=intr,
             output_dir=wake_p2,
+            json_dir=wake_cfg,
             sample_image=sample_img,
             sample_measured=sample_meas,
             sample_projected=proj_pts.reshape(-1, 2),
@@ -127,6 +146,7 @@ for wake in ("wake2", "wake4"):
     calibrator.export_artifacts(
         intrinsics=intr3,
         output_dir=wake_p2,
+        json_dir=wake_cfg,
         sample_image=sample_img3,
         sample_measured=img3[0],
         sample_projected=proj3.reshape(-1, 2),
@@ -163,15 +183,18 @@ for wake in ("wake2", "wake4"):
 
     calib12 = StereoPairCalibrator(intrinsics[1], intrinsics[2])
     c12 = calib12.calibrate(obj_s, p1_s, p2_s)
-    calib12.export_artifacts(c12, sample_trip[0], sample_trip[1], sample_trip[3], sample_trip[4], wake_p3)
+    calib12.export_artifacts(c12, sample_trip[0], sample_trip[1], sample_trip[3], sample_trip[4],
+                             output_dir=wake_p3, config_dir=wake_cfg)
 
     calib23 = StereoPairCalibrator(intrinsics[2], intrinsics[3])
     c23 = calib23.calibrate(obj_s, p2_s, p3_s)
-    calib23.export_artifacts(c23, sample_trip[1], sample_trip[2], sample_trip[4], sample_trip[5], wake_p3)
+    calib23.export_artifacts(c23, sample_trip[1], sample_trip[2], sample_trip[4], sample_trip[5],
+                             output_dir=wake_p3, config_dir=wake_cfg)
 
     calib13 = StereoPairCalibrator(intrinsics[1], intrinsics[3])
     c13 = calib13.calibrate(obj_s, p1_s, p3_s)
-    calib13.export_artifacts(c13, sample_trip[0], sample_trip[2], sample_trip[3], sample_trip[5], wake_p3)
+    calib13.export_artifacts(c13, sample_trip[0], sample_trip[2], sample_trip[3], sample_trip[5],
+                             output_dir=wake_p3, config_dir=wake_cfg)
 
     graph = EpipolarGraph()
     graph.add_edge(c12); graph.add_edge(c23); graph.add_edge(c13)
@@ -194,32 +217,22 @@ for wake in ("wake2", "wake4"):
     print(f"[{wake.upper()}] Exporting Phase 4A Motion Synchronization...")
     sync = MotionSynchronizer()
     sync_res = sync.synchronize(graph, ref_cam=1)
-    sync.export_artifacts(sync_res, output_dir=wake_p4a)
+    sync.export_artifacts(sync_res, output_dir=wake_p4a, config_dir=wake_cfg)
 
     # ----------------------------------------------------
     # FASE 4B: Global Bundle Block Adjustment (BBA)
     # ----------------------------------------------------
     print(f"[{wake.upper()}] Exporting Phase 4B Global BBA Artifacts...")
-    # Carica la calibrazione consolidata precedentemente ottimizzata
     bba_res = GlobalCalibrationResult.load_for_wake(wake)
     bba = GlobalBundleAdjuster(huber_delta=1.5, max_iterations=150)
-    bba.export_artifacts(bba_res, output_dir=wake_p4b)
+    bba.export_artifacts(bba_res, output_dir=wake_p4b, config_dir=wake_cfg)
     print(f"  BBA Global RMS: {bba_res.mean_reprojection_error_px:.4f} px")
 
-    # Mirror su cartella radice per wake2 (la nostra vista canonica di default)
+    # Per wake2 (nostra vista canonica di riferimento), sincronizza anche nella root configs/calibration/
     if wake == "wake2":
-        import shutil
-        print("[MIRROR] Mirroring wake2 artifacts to canonical tests/output/phaseX_... folders")
-        for src_sub, dst_sub in [
-            (wake_p2, out_base / "phase2_monocular"),
-            (wake_p3, out_base / "phase3_stereo"),
-            (wake_p4a, out_base / "phase4a_synchronization"),
-            (wake_p4b, out_base / "phase4b_bundle_adjustment"),
-        ]:
-            dst_sub.mkdir(parents=True, exist_ok=True)
-            for item in src_sub.glob("*"):
-                if item.is_file():
-                    shutil.copy2(item, dst_sub / item.name)
+        print("[CONFIG] Mirroring wake2 configurations to canonical configs/calibration/ root...")
+        for json_file in wake_cfg.glob("*.json"):
+            shutil.copy2(json_file, cfg_base / json_file.name)
 
 # ----------------------------------------------------
 # REPORT DI SINTESI METROLOGICA MULTI-WAKE PER PAPER
@@ -300,14 +313,14 @@ Scaling the dataset to $N=75$ frames distributed across the full sensor field br
 
 ---
 
-## 5. Artifact Directory Tree Ready for Publications
-
-All artifacts are formatted at publication quality and indexed below:
+## 5. Directory Structure of Clean Artifacts
 
 ```
 tests/output/
 ├── calibration_synthesis_report.md       # Master metrology report
-├── wake2/                                # Complete artifacts for Wake 2
+├── README.md                             # Index and documentation
+├── phase1_corner_check/                  # Physical target check & sensor coverage
+├── wake2/                                # Complete artifacts for Wake 2 (canonical)
 │   ├── phase2_monocular/                 # Undistortion comparisons, dashboards, overlays, reports
 │   ├── phase3_stereo/                    # Epipolar line overlays, loop closure report
 │   ├── phase4a_synchronization/          # SE(3) layout diagrams and report
@@ -323,4 +336,37 @@ tests/output/
 with open(out_base / "calibration_synthesis_report.md", "w", encoding="utf-8") as f:
     f.write(synth_md)
 print("[OK] calibration_synthesis_report.md generated successfully!")
-print("ALL ARTIFACTS UPDATED AND READY FOR REPORTS/PAPERS!")
+
+# ----------------------------------------------------
+# README.MD IN TESTS/OUTPUT/
+# ----------------------------------------------------
+readme_md = """# Risultati e Artefatti della Calibrazione Seeurn (Modulo 02)
+
+Questa directory contiene tutti gli output diagnostici, le figure ad alta risoluzione (PNG),
+i report analitici (Markdown) e i file di configurazione metrici (JSON) generati dalla pipeline
+di calibrazione fotogrammetrica multi-camera di Seeurn.
+
+Tutti i file sono rigorosamente aggiornati alla versione stabilizzata ad alto campionamento
+($N=75$ fotogrammi monoculari, $N=30$ triplette stereoscopiche sincronizzate).
+
+---
+
+## 🧭 Organizzazione per Scia (Wake-Specific)
+
+- [`calibration_synthesis_report.md`](./calibration_synthesis_report.md): **Master Report di Sintesi Comparativa**
+  Confronto metrologico incrociato tra Wake 2 e Wake 4 (focali, baseline millimetriche, residui BBA e prova di stabilità del rig per paper e tesi).
+- [`wake2/`](./wake2/): **Calibrazione Consolidata per Scia 2 (Riferimento Canonico)**
+  - `phase2_monocular/`: Report monoculari, dashboard 2D dei residui, rettificazione distorsione side-by-side e overlay corner.
+  - `phase3_stereo/`: Overlay delle linee epipolari coniugate (1-2, 2-3, 1-3), estrinseci JSON e report di Loop Closure.
+  - `phase4a_synchronization/`: Layout 2D del network delle telecamere nel sistema mondo e sincronizzazione delle pose.
+  - `phase4b_bundle_adjustment/`: Ricostruzione 3D multi-vista del network e dashboard degli errori congiunti di riproiezione.
+- [`wake4/`](./wake4/): **Calibrazione Consolidata per Scia 4**
+  - Struttura identica a Wake 2, per un confronto immediato tra diverse giornate di prova sperimentale.
+- [`phase1_corner_check/`](./phase1_corner_check/): **Controllo Qualità del Target Fisico & Copertura Sensore**
+  - Mappe di copertura del sensore (Convex Hull) e fotogrammi campione annotati con l'origine PT_0 e gli assi locali X-Y.
+"""
+
+with open(out_base / "README.md", "w", encoding="utf-8") as f:
+    f.write(readme_md)
+print("[OK] tests/output/README.md generated successfully!")
+print("ALL ARTIFACTS CLEANED, UPDATED AND READY FOR REPORTS/PAPERS!")
